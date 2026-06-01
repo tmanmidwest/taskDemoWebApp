@@ -18,6 +18,8 @@ reliably.
 - **Dashboard** (`/dashboard`) — the logged-in user's own assigned tasks.
 - **Tasks** (`/tasks`) — create, assign, edit, change status, delete (role-gated).
 - **Users** (`/users`) — full user lifecycle for Administrators.
+- **Change Password** (`/account/password`) — any logged-in user can change their
+  own password (current password → new → confirm, minimum 8 characters).
 - **REST provisioning API** (`/api/users`) — for connector-style integrations,
   auto-documented at `/docs`.
 - **Default administrator** seeded automatically on first boot.
@@ -128,10 +130,12 @@ TaskFlow gives you two ways to demonstrate onboarding the same web-only app:
 
 1. **Browser automation** — Saviynt's AI browser agent logs in as an
    Administrator and drives the **Users** page: *Add User* (first name, last
-   name, email, role), *Edit*, *Deactivate / Activate*, *Reset Password*, and
+   name, email, role), *Edit*, *Deactivate / Activate*, *Set / Reset Password*
+   (type a chosen password, or leave blank for a random temp one), and
    *Delete*. Each control has a stable ID (e.g. `add-user-btn`,
-   `edit-user-{id}`, `deactivate-user-{id}`, `delete-user-{id}`) so the recorded
-   flow stays reliable.
+   `edit-user-{id}`, `deactivate-user-{id}`, `reset-user-{id}`,
+   `delete-user-{id}`) so the recorded flow stays reliable. Any user can also
+   change their own password at `/account/password` (`nav-password`).
 2. **REST connector** — point a Saviynt REST connector at `/api/users` for
    create / read / update / disable / delete, mapping the provisioning lifecycle
    to the HTTP verbs above.

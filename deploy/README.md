@@ -140,7 +140,8 @@ Nobody shares infrastructure. Tearing down your instance has no effect on anyone
 | Role | Administrator |
 
 This account is seeded automatically on first deploy. Change the password after
-first login, or override the seed values by editing the `ADMIN_USERNAME`,
+first login from the **Change Password** link in the top bar (`/account/password`),
+or override the seed values by editing the `ADMIN_USERNAME`,
 `ADMIN_PASSWORD`, and `ADMIN_EMAIL` settings at the top of `deploy.sh` before
 deploying.
 

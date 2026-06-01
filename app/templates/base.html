@@ -18,6 +18,7 @@
   <div class="userbox">
     <span class="who">{{ user.first_name }} {{ user.last_name }}</span>
     <span class="role-badge role-{{ user.role | replace(' ', '-') | lower }}">{{ user.role }}</span>
+    <a href="/account/password" id="nav-password" class="btn btn-ghost">Change Password</a>
     <a href="/logout" id="nav-logout" class="btn btn-ghost">Log out</a>
   </div>
 </header>

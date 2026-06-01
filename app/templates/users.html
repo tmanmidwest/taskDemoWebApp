@@ -44,7 +44,10 @@
         </form>
         {% endif %}
         <form method="post" action="/users/{{ u.id }}/reset-password" class="inline-form">
-          <button type="submit" class="btn btn-small" id="reset-user-{{ u.id }}">Reset password</button>
+          <input type="text" name="new_password" class="input-small"
+                 id="reset-pw-input-{{ u.id }}" autocomplete="off"
+                 placeholder="new password (blank = random)">
+          <button type="submit" class="btn btn-small" id="reset-user-{{ u.id }}">Set / Reset password</button>
         </form>
         <form method="post" action="/users/{{ u.id }}/delete" class="inline-form"
               onsubmit="return confirm('Permanently delete {{ u.username }}?');">

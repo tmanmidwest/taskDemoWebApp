@@ -25,6 +25,7 @@ from .seed import seed
 
 LOG_LEVEL = os.environ.get("TASKAPP_LOG_LEVEL", "INFO").upper()
 SECRET_KEY = os.environ.get("TASKAPP_SECRET_KEY", "taskflow-demo-not-secret-change-me")
+MIN_PASSWORD_LEN = 8
 
 logging.basicConfig(level=LOG_LEVEL)
 log = logging.getLogger("taskflow")
@@ -118,6 +119,39 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
 def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", 302)
+
+
+# ── self-service: change my own password ──────────────────────────────────────
+@app.get("/account/password", response_class=HTMLResponse)
+def change_password_form(request: Request):
+    user = current_user(request)
+    if not user:
+        return RedirectResponse("/login", 302)
+    return render(request, "change_password.html", user)
+
+
+@app.post("/account/password", response_class=HTMLResponse)
+def change_password_submit(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+):
+    user = current_user(request)
+    if not user:
+        return RedirectResponse("/login", 302)
+    if not db.verify_password(current_password, user["password_hash"]):
+        return render(request, "change_password.html", user,
+                      error="Your current password is incorrect.")
+    if len(new_password) < MIN_PASSWORD_LEN:
+        return render(request, "change_password.html", user,
+                      error=f"New password must be at least {MIN_PASSWORD_LEN} characters.")
+    if new_password != confirm_password:
+        return render(request, "change_password.html", user,
+                      error="New password and confirmation do not match.")
+    db.set_password(user["id"], new_password)
+    flash(request, "Your password has been changed.", "success")
+    return RedirectResponse("/dashboard", 303)
 
 
 # ── dashboard (my tasks) ──────────────────────────────────────────────────────
@@ -344,17 +378,29 @@ def user_activate(request: Request, user_id: int):
 
 
 @app.post("/users/{user_id}/reset-password")
-def user_reset_password(request: Request, user_id: int):
+def user_reset_password(request: Request, user_id: int,
+                        new_password: str = Form("")):
     user = current_user(request)
     if not user or not can_manage_users(user["role"]):
         return RedirectResponse("/users", 302)
     target = db.get_user(user_id)
     if target:
-        temp = db.generate_temp_password()
-        db.set_password(user_id, temp)
-        flash(request,
-              f"Password reset for '{target['username']}'. New temp password: {temp}",
-              "success")
+        chosen = new_password.strip()
+        if chosen:
+            if len(chosen) < MIN_PASSWORD_LEN:
+                flash(request,
+                      f"Password not changed: must be at least {MIN_PASSWORD_LEN} characters.",
+                      "error")
+                return RedirectResponse("/users", 303)
+            db.set_password(user_id, chosen)
+            flash(request,
+                  f"Password set for '{target['username']}'.", "success")
+        else:
+            temp = db.generate_temp_password()
+            db.set_password(user_id, temp)
+            flash(request,
+                  f"Password reset for '{target['username']}'. New temp password: {temp}",
+                  "success")
     return RedirectResponse("/users", 303)
 
 
