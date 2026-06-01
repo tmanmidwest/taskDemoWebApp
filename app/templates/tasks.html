@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}All Tasks — TaskFlow{% endblock %}
+{% block content %}
+<div class="page-head row">
+  <div>
+    <h1>All Tasks</h1>
+    <p class="muted">Every task across the team.</p>
+  </div>
+  <a href="/tasks/new" id="new-task-btn" class="btn btn-primary">+ New Task</a>
+</div>
+
+{% if tasks %}
+<table class="table" id="all-tasks-table">
+  <thead>
+    <tr>
+      <th>Task</th><th>Assignee</th><th>Priority</th><th>Due</th><th>Status</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in tasks %}
+    <tr data-task-id="{{ t.id }}">
+      <td>
+        <div class="t-title">{{ t.title }}</div>
+        {% if t.description %}<div class="t-desc muted">{{ t.description }}</div>{% endif %}
+      </td>
+      <td>
+        {% if t.a_first %}{{ t.a_first }} {{ t.a_last }}{% else %}<span class="muted">Unassigned</span>{% endif %}
+      </td>
+      <td><span class="pill pill-{{ t.priority | lower }}">{{ t.priority }}</span></td>
+      <td>{{ t.due_date or "—" }}</td>
+      <td><span class="pill status-{{ t.status | replace(' ', '-') | lower }}">{{ t.status }}</span></td>
+      <td class="actions">
+        <a href="/tasks/{{ t.id }}/edit" class="btn btn-small">Edit</a>
+        <form method="post" action="/tasks/{{ t.id }}/delete" class="inline-form"
+              onsubmit="return confirm('Delete this task?');">
+          <button type="submit" class="btn btn-small btn-danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty"><p>No tasks yet. <a href="/tasks/new">Create the first one</a>.</p></div>
+{% endif %}
+{% endblock %}

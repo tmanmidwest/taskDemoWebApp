@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Users — TaskFlow{% endblock %}
+{% block content %}
+<div class="page-head row">
+  <div>
+    <h1>Users</h1>
+    <p class="muted">
+      {% if can_manage_users %}Provision, update, deactivate, and remove users.
+      {% else %}Directory of all users (read-only).{% endif %}
+    </p>
+  </div>
+  {% if can_manage_users %}
+  <a href="/users/new" id="add-user-btn" class="btn btn-primary">+ Add User</a>
+  {% endif %}
+</div>
+
+<table class="table" id="users-table">
+  <thead>
+    <tr>
+      <th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th>
+      {% if can_manage_users %}<th>Actions</th>{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr data-user-id="{{ u.id }}" data-username="{{ u.username }}">
+      <td>{{ u.first_name }} {{ u.last_name }}</td>
+      <td><code>{{ u.username }}</code></td>
+      <td>{{ u.email }}</td>
+      <td><span class="role-badge role-{{ u.role | replace(' ', '-') | lower }}">{{ u.role }}</span></td>
+      <td>
+        <span class="pill status-{{ u.status }}">{{ "Active" if u.status == "active" else "Inactive" }}</span>
+      </td>
+      {% if can_manage_users %}
+      <td class="actions">
+        <a href="/users/{{ u.id }}/edit" class="btn btn-small" id="edit-user-{{ u.id }}">Edit</a>
+        {% if u.status == "active" %}
+        <form method="post" action="/users/{{ u.id }}/deactivate" class="inline-form">
+          <button type="submit" class="btn btn-small" id="deactivate-user-{{ u.id }}">Deactivate</button>
+        </form>
+        {% else %}
+        <form method="post" action="/users/{{ u.id }}/activate" class="inline-form">
+          <button type="submit" class="btn btn-small" id="activate-user-{{ u.id }}">Activate</button>
+        </form>
+        {% endif %}
+        <form method="post" action="/users/{{ u.id }}/reset-password" class="inline-form">
+          <button type="submit" class="btn btn-small" id="reset-user-{{ u.id }}">Reset password</button>
+        </form>
+        <form method="post" action="/users/{{ u.id }}/delete" class="inline-form"
+              onsubmit="return confirm('Permanently delete {{ u.username }}?');">
+          <button type="submit" class="btn btn-small btn-danger" id="delete-user-{{ u.id }}">Delete</button>
+        </form>
+      </td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

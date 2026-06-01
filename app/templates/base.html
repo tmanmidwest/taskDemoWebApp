@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}TaskFlow{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+{% if user %}
+<header class="topbar">
+  <a class="brand" href="/dashboard">TaskFlow</a>
+  <nav class="mainnav">
+    <a href="/dashboard" id="nav-dashboard">My Tasks</a>
+    {% if can_manage_tasks %}<a href="/tasks" id="nav-tasks">All Tasks</a>{% endif %}
+    {% if can_view_users %}<a href="/users" id="nav-users">Users</a>{% endif %}
+  </nav>
+  <div class="userbox">
+    <span class="who">{{ user.first_name }} {{ user.last_name }}</span>
+    <span class="role-badge role-{{ user.role | replace(' ', '-') | lower }}">{{ user.role }}</span>
+    <a href="/logout" id="nav-logout" class="btn btn-ghost">Log out</a>
+  </div>
+</header>
+{% endif %}
+
+<main class="container">
+  {% with msgs = flashes %}
+    {% if msgs %}
+      <div class="flashes">
+        {% for f in msgs %}
+          <div class="flash flash-{{ f.c }}">{{ f.m }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

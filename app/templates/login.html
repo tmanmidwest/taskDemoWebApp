@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Sign in — TaskFlow{% endblock %}
+{% block content %}
+<div class="auth-wrap">
+  <div class="auth-card">
+    <h1 class="auth-logo">TaskFlow</h1>
+    <p class="auth-sub">Sign in to your account</p>
+
+    {% if error %}<div class="flash flash-error" id="login-error">{{ error }}</div>{% endif %}
+
+    <form method="post" action="/login" class="form" id="login-form">
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" autocomplete="username" autofocus required>
+
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+      <button type="submit" id="login-submit" class="btn btn-primary btn-block">Sign in</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

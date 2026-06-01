@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}My Tasks — TaskFlow{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>My Tasks</h1>
+  <p class="muted">Tasks assigned to you, {{ user.first_name }}.</p>
+</div>
+
+{% if tasks %}
+<table class="table" id="my-tasks-table">
+  <thead>
+    <tr>
+      <th>Task</th><th>Priority</th><th>Due</th><th>Status</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in tasks %}
+    <tr data-task-id="{{ t.id }}">
+      <td>
+        <div class="t-title">{{ t.title }}</div>
+        {% if t.description %}<div class="t-desc muted">{{ t.description }}</div>{% endif %}
+      </td>
+      <td><span class="pill pill-{{ t.priority | lower }}">{{ t.priority }}</span></td>
+      <td>{{ t.due_date or "—" }}</td>
+      <td><span class="pill status-{{ t.status | replace(' ', '-') | lower }}">{{ t.status }}</span></td>
+      <td>
+        <form method="post" action="/tasks/{{ t.id }}/status" class="inline-form">
+          <select name="status" aria-label="Update status">
+            {% for s in TASK_STATUSES %}
+            <option value="{{ s }}" {% if s == t.status %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-small">Update</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty">
+  <p>You have no tasks assigned right now.</p>
+  {% if can_manage_tasks %}<p><a href="/tasks/new" class="btn btn-primary">Create a task</a></p>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

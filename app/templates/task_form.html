@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit" if task else "New" }} Task — TaskFlow{% endblock %}
+{% block content %}
+<div class="page-head"><h1>{{ "Edit Task" if task else "New Task" }}</h1></div>
+
+<form method="post" action="{{ action }}" class="form card" id="task-form">
+  <label for="title">Title</label>
+  <input type="text" id="title" name="title" required value="{{ task.title if task else '' }}">
+
+  <label for="description">Description</label>
+  <textarea id="description" name="description" rows="3">{{ task.description if task else '' }}</textarea>
+
+  <label for="assignee_id">Assignee</label>
+  <select id="assignee_id" name="assignee_id">
+    <option value="">— Unassigned —</option>
+    {% for u in users %}
+    <option value="{{ u.id }}"
+      {% if task and task.assignee_id == u.id %}selected{% endif %}>
+      {{ u.first_name }} {{ u.last_name }} ({{ u.role }})
+    </option>
+    {% endfor %}
+  </select>
+
+  <div class="grid-2">
+    <div>
+      <label for="priority">Priority</label>
+      <select id="priority" name="priority">
+        {% for p in TASK_PRIORITIES %}
+        <option value="{{ p }}" {% if task and task.priority == p %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="due_date">Due date</label>
+      <input type="date" id="due_date" name="due_date" value="{{ task.due_date if task else '' }}">
+    </div>
+  </div>
+
+  {% if task %}
+  <label for="status">Status</label>
+  <select id="status" name="status">
+    {% for s in TASK_STATUSES %}
+    <option value="{{ s }}" {% if task.status == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  {% endif %}
+
+  <div class="form-actions">
+    <button type="submit" id="save-task" class="btn btn-primary">Save</button>
+    <a href="/tasks" class="btn btn-ghost">Cancel</a>
+  </div>
+</form>
+{% endblock %}
