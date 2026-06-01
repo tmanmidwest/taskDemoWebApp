@@ -1,0 +1,10 @@
+.git
+.gitignore
+deploy/
+*.md
+__pycache__/
+*.pyc
+.task-demo-state
+*.db
+.venv/
+venv/
