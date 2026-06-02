@@ -131,19 +131,33 @@ Nobody shares infrastructure. Tearing down your instance has no effect on anyone
 
 ---
 
-## Default login
+## Administrator login
+
+A default administrator is seeded the first time the app boots. Its **password
+is set when you run `deploy.sh`** — the script prompts for it (entered twice,
+hidden), enforces an 8-character minimum, and offers to generate a strong random
+one if you leave it blank. The password is passed to the container as an
+environment variable and is **never written to this repo or the state file**.
 
 | Field | Value |
 |---|---|
 | Username | `robbytheadmin` |
-| Password | `N0nPr0dF0r$@viynt8` |
+| Password | _set interactively at deploy time_ |
 | Role | Administrator |
 
-This account is seeded automatically on first deploy. Change the password after
-first login from the **Change Password** link in the top bar (`/account/password`),
-or override the seed values by editing the `ADMIN_USERNAME`,
-`ADMIN_PASSWORD`, and `ADMIN_EMAIL` settings at the top of `deploy.sh` before
-deploying.
+For an unattended/scripted deploy, set the password (and optionally username and
+email) in the environment beforehand instead of being prompted:
+
+```bash
+export TASKAPP_ADMIN_PASSWORD='your-strong-password'
+export TASKAPP_ADMIN_USERNAME='robbytheadmin'   # optional
+export TASKAPP_ADMIN_EMAIL='admin@taskflow.demo' # optional
+./deploy.sh
+```
+
+The seed only runs against an empty database (first boot). Once users exist on
+the EFS volume, changing these values has no effect — use the in-app **Change
+Password** link (`/account/password`) to rotate the admin password after deploy.
 
 ---
 

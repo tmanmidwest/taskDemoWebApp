@@ -49,15 +49,18 @@ Administrator**, so a demo can't lock itself out.
 
 ```bash
 pip install -r requirements.txt
-python -m app.main
+TASKAPP_ADMIN_PASSWORD='choose-a-password' python -m app.main
 ```
 
-Then open http://localhost:8000/. Default login:
+The admin password is required — there is no built-in default. On first run the
+app creates an administrator using `TASKAPP_ADMIN_PASSWORD` (minimum 8
+characters); if it isn't set, startup stops with a clear message. Then open
+http://localhost:8000/ and log in:
 
 | Field | Value |
 |---|---|
 | Username | `robbytheadmin` |
-| Password | `N0nPr0dF0r$@viynt8` |
+| Password | _the `TASKAPP_ADMIN_PASSWORD` you set_ |
 
 Set `TASKAPP_SEED_SAMPLE=true` to also seed a few sample users and tasks.
 
@@ -65,7 +68,8 @@ Set `TASKAPP_SEED_SAMPLE=true` to also seed a few sample users and tasks.
 
 ```bash
 docker build -t taskflow .
-docker run -p 8000:8000 -v "$PWD/data:/data" taskflow
+docker run -p 8000:8000 -v "$PWD/data:/data" \
+  -e TASKAPP_ADMIN_PASSWORD='choose-a-password' taskflow
 ```
 
 The SQLite database lives at `TASKAPP_DB_PATH` (default `/data/taskflow.db`), so
@@ -82,8 +86,8 @@ mounting `/data` persists data across restarts.
 | `TASKAPP_DB_PATH` | `/data/taskflow.db` | SQLite file location |
 | `TASKAPP_LOG_LEVEL` | `INFO` | Log verbosity |
 | `TASKAPP_SECRET_KEY` | (dev default) | Session-cookie signing key — set a real value in production |
+| `TASKAPP_ADMIN_PASSWORD` | _(required on first boot)_ | Admin password used when seeding the administrator. No default; startup fails if the admin must be created and this is unset. Minimum 8 characters. |
 | `TASKAPP_ADMIN_USERNAME` | `robbytheadmin` | Seeded admin username |
-| `TASKAPP_ADMIN_PASSWORD` | `N0nPr0dF0r$@viynt8` | Seeded admin password |
 | `TASKAPP_ADMIN_EMAIL` | `admin@taskflow.demo` | Seeded admin email |
 | `TASKAPP_SEED_SAMPLE` | `false` | If `true`, also seed sample users/tasks |
 
@@ -105,7 +109,7 @@ account. Interactive docs: `/docs`.
 Example — create a user:
 
 ```bash
-curl -u robbytheadmin:'N0nPr0dF0r$@viynt8' \
+curl -u robbytheadmin:"$TASKAPP_ADMIN_PASSWORD" \
   -X POST http://localhost:8000/api/users \
   -H 'Content-Type: application/json' \
   -d '{"firstName":"Jordan","lastName":"Rivera","email":"jordan.rivera@example.com","role":"Sales Rep"}'
@@ -114,7 +118,7 @@ curl -u robbytheadmin:'N0nPr0dF0r$@viynt8' \
 Example — disable a user (deactivate rather than delete):
 
 ```bash
-curl -u robbytheadmin:'N0nPr0dF0r$@viynt8' \
+curl -u robbytheadmin:"$TASKAPP_ADMIN_PASSWORD" \
   -X PATCH http://localhost:8000/api/users/5 \
   -H 'Content-Type: application/json' \
   -d '{"active": false}'

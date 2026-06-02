@@ -17,10 +17,13 @@ CPU=256        # 0.25 vCPU
 MEMORY=512     # 0.5 GB
 LOG_LEVEL="INFO"
 
-# Default administrator seeded on first boot (change before a real demo if you like)
-ADMIN_USERNAME="robbytheadmin"
-ADMIN_PASSWORD="N0nPr0dF0r\$@viynt8"
-ADMIN_EMAIL="admin@taskflow.demo"
+# Default administrator seeded on first boot.
+# The password is NOT stored here — deploy.sh prompts for it at deploy time
+# (or reads $TASKAPP_ADMIN_PASSWORD from the environment for non-interactive runs).
+ADMIN_USERNAME="${TASKAPP_ADMIN_USERNAME:-robbytheadmin}"
+ADMIN_EMAIL="${TASKAPP_ADMIN_EMAIL:-admin@taskflow.demo}"
+ADMIN_PASSWORD="${TASKAPP_ADMIN_PASSWORD:-}"   # set interactively below if empty
+MIN_ADMIN_PASSWORD_LEN=8
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Colors for output
@@ -137,6 +140,49 @@ aws ec2 describe-regions --region-names "$REGION" --query 'Regions[0].RegionName
   || error "Invalid or inaccessible region: '$REGION'. Check the name and that your account has access."
 
 success "Region: $REGION"
+
+# ── ADMIN CREDENTIALS ─────────────────────────────────────────────────────────
+header "Administrator account"
+
+echo -e "  A default administrator is created the first time the app boots."
+echo -e "  Set its password now. It is sent to the container as an environment"
+echo -e "  variable and never written to this repo or the state file."
+echo ""
+echo -e "  ${BOLD}Username:${NC} ${ADMIN_USERNAME}    ${BOLD}Email:${NC} ${ADMIN_EMAIL}"
+echo -e "  (override with TASKAPP_ADMIN_USERNAME / TASKAPP_ADMIN_EMAIL if desired)"
+echo ""
+
+if [ -n "$ADMIN_PASSWORD" ]; then
+  # Provided via environment (non-interactive). Validate length only.
+  if [ ${#ADMIN_PASSWORD} -lt $MIN_ADMIN_PASSWORD_LEN ]; then
+    error "TASKAPP_ADMIN_PASSWORD is too short (minimum ${MIN_ADMIN_PASSWORD_LEN} characters)."
+  fi
+  success "Using administrator password from environment"
+else
+  while true; do
+    read -rsp "  Enter admin password (min ${MIN_ADMIN_PASSWORD_LEN} characters): " PW1
+    echo ""
+    if [ -z "$PW1" ]; then
+      warn "A password is required. Please enter one."
+      continue
+    fi
+    if [ ${#PW1} -lt $MIN_ADMIN_PASSWORD_LEN ]; then
+      warn "Too short — must be at least ${MIN_ADMIN_PASSWORD_LEN} characters. Try again."
+      continue
+    fi
+    read -rsp "  Confirm admin password: " PW2
+    echo ""
+    if [ "$PW1" != "$PW2" ]; then
+      warn "Passwords did not match. Try again."
+      continue
+    fi
+    ADMIN_PASSWORD="$PW1"
+    success "Administrator password set"
+    break
+  done
+  unset PW1 PW2
+fi
+
 
 
 if [ -f "$STATE_FILE" ]; then
@@ -385,6 +431,10 @@ fi
 # ── TASK DEFINITION ───────────────────────────────────────────────────────────
 header "Task definition"
 
+# JSON-escape the admin password so quotes/backslashes/etc. cannot break the
+# task-definition JSON below. Produces a value WITHOUT surrounding quotes.
+ADMIN_PASSWORD_JSON=$(printf '%s' "$ADMIN_PASSWORD" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1])')
+
 log "Registering task definition..."
 TASK_DEF_ARN=$(aws ecs register-task-definition \
   --family "${APP_NAME}-webapp" \
@@ -406,7 +456,7 @@ TASK_DEF_ARN=$(aws ecs register-task-definition \
         { \"name\": \"TASKAPP_BIND_PORT\",      \"value\": \"${CONTAINER_PORT}\" },
         { \"name\": \"TASKAPP_DB_PATH\",        \"value\": \"/data/taskflow.db\" },
         { \"name\": \"TASKAPP_ADMIN_USERNAME\", \"value\": \"${ADMIN_USERNAME}\" },
-        { \"name\": \"TASKAPP_ADMIN_PASSWORD\", \"value\": \"${ADMIN_PASSWORD}\" },
+        { \"name\": \"TASKAPP_ADMIN_PASSWORD\", \"value\": \"${ADMIN_PASSWORD_JSON}\" },
         { \"name\": \"TASKAPP_ADMIN_EMAIL\",    \"value\": \"${ADMIN_EMAIL}\" }
       ],
       \"mountPoints\": [{
@@ -596,9 +646,10 @@ echo -e "  ${BOLD}API Docs:${NC}  http://${ALB_DNS}/docs"
 echo -e "  ${BOLD}Health:${NC}    http://${ALB_DNS}/health"
 echo ""
 echo -e "  ${BOLD}Username:${NC}  ${ADMIN_USERNAME}"
-echo -e "  ${BOLD}Password:${NC}  ${ADMIN_PASSWORD}"
+echo -e "  ${BOLD}Password:${NC}  (the one you set during deploy)"
 echo ""
-echo -e "  ${YELLOW}This is the default administrator. Use it to log in and provision other users.${NC}"
+echo -e "  ${YELLOW}This is the administrator account. Use it to log in and provision other users.${NC}"
+echo -e "  ${YELLOW}You can change it any time from the Change Password link in the app.${NC}"
 echo ""
 echo -e "  Run ${BOLD}./manage.sh${NC} to stop, start, restart, or view logs."
 echo -e "  Run ${BOLD}./teardown.sh${NC} to delete all AWS resources."

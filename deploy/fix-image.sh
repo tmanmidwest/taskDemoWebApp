@@ -39,11 +39,13 @@ error()   { echo -e "${RED}✖  ERROR: $1${NC}" >&2; exit 1; }
 header()  { echo -e "\n${BOLD}${BLUE}── $1 ${NC}"; }
 skip()    { echo -e "  ${YELLOW}↷  Skipping: $1${NC}"; }
 
-# Admin seed values — used only if a brand-new EFS volume initialises an empty DB.
-# Kept in sync with deploy.sh. Override by exporting before running if needed.
 ADMIN_USERNAME="${ADMIN_USERNAME:-robbytheadmin}"
-ADMIN_PASSWORD="${ADMIN_PASSWORD:-N0nPr0dF0r\$@viynt8}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@taskflow.demo}"
+# No hard-coded password. The admin is seeded only on first boot of an empty
+# database, so by the time you run fix-image.sh the existing admin/password on
+# EFS is unchanged. We only pass a seed password through if you explicitly set
+# TASKAPP_ADMIN_PASSWORD in the environment (e.g. recovering onto a fresh volume).
+ADMIN_PASSWORD="${TASKAPP_ADMIN_PASSWORD:-}"
 
 # ── AWS SESSION VALIDATION ────────────────────────────────────────────────────
 header "Validating AWS session"
@@ -108,6 +110,10 @@ success "Image built and pushed: $ECR_IMAGE"
 # ── UPDATE TASK DEFINITION ────────────────────────────────────────────────────
 header "Re-registering ECS task definition"
 
+# JSON-escape the admin password so quotes/backslashes/etc. cannot break the
+# task-definition JSON below. Produces a value WITHOUT surrounding quotes.
+ADMIN_PASSWORD_JSON=$(printf '%s' "$ADMIN_PASSWORD" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1])')
+
 log "Registering a clean task definition pinned to the rebuilt ECR image..."
 aws ecs register-task-definition \
   --family "${APP_NAME}-webapp" \
@@ -128,7 +134,7 @@ aws ecs register-task-definition \
         { \"name\": \"TASKAPP_BIND_PORT\",      \"value\": \"8000\" },
         { \"name\": \"TASKAPP_DB_PATH\",        \"value\": \"/data/taskflow.db\" },
         { \"name\": \"TASKAPP_ADMIN_USERNAME\", \"value\": \"${ADMIN_USERNAME}\" },
-        { \"name\": \"TASKAPP_ADMIN_PASSWORD\", \"value\": \"${ADMIN_PASSWORD}\" },
+        { \"name\": \"TASKAPP_ADMIN_PASSWORD\", \"value\": \"${ADMIN_PASSWORD_JSON}\" },
         { \"name\": \"TASKAPP_ADMIN_EMAIL\",    \"value\": \"${ADMIN_EMAIL}\" }
       ],
       \"mountPoints\": [{
