@@ -1,3 +1,12 @@
 .DS_Store
 mnt/.DS_Store
 deploy/.task-demo-state
+
+# Python
+__pycache__/
+*.pyc
+
+# Local SQLite data and virtualenvs
+*.db
+.venv/
+venv/
