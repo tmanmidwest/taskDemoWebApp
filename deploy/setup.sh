@@ -129,6 +129,11 @@ aws elbv2 describe-load-balancers --region "${REGION:-us-east-1}" >/dev/null 2>&
   && pass "Elastic Load Balancing access confirmed" \
   || fail "No ELB access — your AWS user may need ELB permissions"
 
+# ACM — only needed if you deploy with HTTPS on a custom domain
+aws acm list-certificates --region "${REGION:-us-east-1}" >/dev/null 2>&1 \
+  && pass "ACM access confirmed (needed for HTTPS custom domains)" \
+  || warn "No ACM access — you can still deploy HTTP-only, but not with HTTPS"
+
 aws iam get-role --role-name ecsTaskExecutionRole >/dev/null 2>&1 \
   && pass "IAM access confirmed (ecsTaskExecutionRole exists)" \
   || {

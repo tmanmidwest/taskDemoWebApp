@@ -16,8 +16,6 @@
 
 set -euo pipefail
 
-APP_NAME="task-demo"
-
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -29,7 +27,12 @@ CHECKMARK="${GREEN}✔${NC}"
 ARROW="${BLUE}▶${NC}"
 WARNING="${YELLOW}⚠${NC}"
 
-STATE_FILE=".task-demo-state"
+# State file naming, matching deploy.sh.
+# The default instance keeps the original ".task-demo-state" name; other instances
+# are namespaced ".task-demo-state.<instance>" so several can coexist.
+state_file_for() {
+  if [ "$1" = "task-demo" ]; then echo ".task-demo-state"; else echo ".task-demo-state.$1"; fi
+}
 
 log()     { echo -e "${ARROW}  $1"; }
 success() { echo -e "${CHECKMARK}  $1"; }
@@ -59,6 +62,19 @@ aws ec2 describe-regions --region-names "$REGION" --query 'Regions[0].RegionName
   --output text >/dev/null 2>&1 \
   || error "Invalid or inaccessible region: '$REGION'."
 success "Region: $REGION"
+
+# ── DEPLOYMENT INSTANCE ───────────────────────────────────────────────────────
+header "Deployment instance"
+
+DEFAULT_INSTANCE="${INSTANCE:-task-demo}"
+if [ -n "${INSTANCE:-}" ]; then
+  APP_NAME="$INSTANCE"
+else
+  read -rp "  Instance name to restore [default: $DEFAULT_INSTANCE]: " INSTANCE_INPUT
+  APP_NAME="${INSTANCE_INPUT:-$DEFAULT_INSTANCE}"
+fi
+STATE_FILE=$(state_file_for "$APP_NAME")
+success "Instance: $APP_NAME  (state file: $STATE_FILE)"
 
 if [ -f "$STATE_FILE" ]; then
   warn "A state file already exists here ($STATE_FILE)."
@@ -147,6 +163,26 @@ TASK_DEF_ARN=$(aws ecs list-task-definitions \
 [ "$TASK_DEF_ARN" = "None" ] && TASK_DEF_ARN=""
 [ -n "$TASK_DEF_ARN" ] && success "Task definition: $TASK_DEF_ARN" || warn "No active task definition found"
 
+# HTTPS — detect from a 443 listener and its attached certificate
+ENABLE_HTTPS="false"
+DOMAIN_NAME=""
+CERT_ARN=""
+if [ -n "$ALB_ARN" ]; then
+  CERT_ARN=$(aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" \
+    --query "Listeners[?Port==\`443\`].Certificates[0].CertificateArn | [0]" \
+    --output text --region "$REGION" 2>/dev/null || echo "")
+  [ "$CERT_ARN" = "None" ] && CERT_ARN=""
+  if [ -n "$CERT_ARN" ]; then
+    ENABLE_HTTPS="true"
+    DOMAIN_NAME=$(aws acm describe-certificate --certificate-arn "$CERT_ARN" --region "$REGION" \
+      --query 'Certificate.DomainName' --output text 2>/dev/null || echo "")
+    [ "$DOMAIN_NAME" = "None" ] && DOMAIN_NAME=""
+    success "HTTPS enabled: ${DOMAIN_NAME:-custom domain} (cert $CERT_ARN)"
+  else
+    skip "No HTTPS listener — HTTP-only deployment"
+  fi
+fi
+
 # Constants / derived
 LOG_GROUP="/ecs/${APP_NAME}-webapp"
 
@@ -188,6 +224,9 @@ ALB_DNS=$ALB_DNS
 TG_ARN=$TG_ARN
 LOG_GROUP=$LOG_GROUP
 TASK_DEF_ARN=$TASK_DEF_ARN
+ENABLE_HTTPS=$ENABLE_HTTPS
+DOMAIN_NAME=$DOMAIN_NAME
+CERT_ARN=$CERT_ARN
 EOF
 
 # Only record CONTAINER_IMAGE if the ECR repo exists (matches deploy.sh behaviour)
@@ -200,7 +239,11 @@ echo -e "${BOLD}${GREEN}══════════════════�
 echo -e "${BOLD}${GREEN}  State restored.${NC}"
 echo -e "${BOLD}${GREEN}═══════════════════════════════════════════════════${NC}"
 echo ""
-echo -e "  ${BOLD}App URL:${NC}  http://${ALB_DNS}/"
+if [ "$ENABLE_HTTPS" = "true" ] && [ -n "$DOMAIN_NAME" ]; then
+  echo -e "  ${BOLD}App URL:${NC}  https://${DOMAIN_NAME}/"
+else
+  echo -e "  ${BOLD}App URL:${NC}  http://${ALB_DNS}/"
+fi
 echo ""
 echo -e "  You can now run ${BOLD}./manage.sh status${NC} from this machine."
 echo ""

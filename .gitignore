@@ -1,6 +1,8 @@
 .DS_Store
 mnt/.DS_Store
-deploy/.task-demo-state
+# Deployment state files — one per instance (.task-demo-state[.<instance>]).
+# These hold live AWS resource IDs; never commit them.
+deploy/.task-demo-state*
 
 # Python
 __pycache__/

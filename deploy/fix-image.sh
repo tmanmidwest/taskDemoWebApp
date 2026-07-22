@@ -30,14 +30,44 @@ CHECKMARK="${GREEN}✔${NC}"
 ARROW="${BLUE}▶${NC}"
 WARNING="${YELLOW}⚠${NC}"
 
-STATE_FILE=".task-demo-state"
-
 log()     { echo -e "${ARROW}  $1"; }
 success() { echo -e "${CHECKMARK}  $1"; }
 warn()    { echo -e "${WARNING}  ${YELLOW}$1${NC}"; }
 error()   { echo -e "${RED}✖  ERROR: $1${NC}" >&2; exit 1; }
 header()  { echo -e "\n${BOLD}${BLUE}── $1 ${NC}"; }
 skip()    { echo -e "  ${YELLOW}↷  Skipping: $1${NC}"; }
+
+# Idempotently ensure a CloudWatch log group exists. Fails loudly if it can't
+# be created — a missing log group makes ECS tasks fail to start (the awslogs
+# driver does NOT auto-create the group), which is hard to diagnose otherwise.
+ensure_log_group() {
+  local group="$1"
+
+  if aws logs describe-log-groups \
+      --log-group-name-prefix "$group" \
+      --region "$REGION" \
+      --query "logGroups[?logGroupName=='${group}'] | [0].logGroupName" \
+      --output text 2>/dev/null | grep -qx "$group"; then
+    return 0
+  fi
+
+  local create_err
+  if ! create_err=$(aws logs create-log-group \
+      --log-group-name "$group" \
+      --region "$REGION" 2>&1); then
+    if echo "$create_err" | grep -q "ResourceAlreadyExistsException"; then
+      return 0
+    fi
+    error "Could not create CloudWatch log group '$group': $create_err"
+  fi
+
+  aws logs describe-log-groups \
+    --log-group-name-prefix "$group" \
+    --region "$REGION" \
+    --query "logGroups[?logGroupName=='${group}'] | [0].logGroupName" \
+    --output text 2>/dev/null | grep -qx "$group" \
+    || error "Log group '$group' still does not exist after creation attempt."
+}
 
 ADMIN_USERNAME="${ADMIN_USERNAME:-robbytheadmin}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@taskflow.demo}"
@@ -57,9 +87,50 @@ SESSION_ACCOUNT=$(echo "$CALLER" | python3 -c "import sys,json; print(json.load(
 SESSION_USER=$(echo "$CALLER" | python3 -c "import sys,json; print(json.load(sys.stdin)['Arn'].split('/')[-1])")
 success "Logged in as: $SESSION_USER (Account: $SESSION_ACCOUNT)"
 
-[ -f "$STATE_FILE" ] || error "No state file found ($STATE_FILE). Run deploy.sh first."
+# ── SELECT DEPLOYMENT INSTANCE ────────────────────────────────────────────────
+# Find every instance's state file. Set INSTANCE=<name> to pick one directly;
+# otherwise use the only one, or choose from a list when several exist.
+shopt -s nullglob
+STATE_FILES=( .task-demo-state* )
+shopt -u nullglob
+
+[ "${#STATE_FILES[@]}" -gt 0 ] || error "No deployment found. Run deploy.sh first."
+
+STATE_FILE=""
+if [ -n "${INSTANCE:-}" ]; then
+  for f in "${STATE_FILES[@]}"; do
+    grep -q "^APP_NAME=${INSTANCE}$" "$f" && { STATE_FILE="$f"; break; }
+  done
+  [ -n "$STATE_FILE" ] || error "No deployment found for instance '${INSTANCE}'."
+elif [ "${#STATE_FILES[@]}" -eq 1 ]; then
+  STATE_FILE="${STATE_FILES[0]}"
+else
+  echo ""
+  echo -e "  ${BOLD}Multiple deployments found — choose one:${NC}"
+  i=1
+  for f in "${STATE_FILES[@]}"; do
+    nm=$(grep '^APP_NAME=' "$f" | cut -d= -f2)
+    rg=$(grep '^REGION=' "$f" | cut -d= -f2)
+    echo -e "    ${BOLD}${i})${NC} ${nm}  (${rg})"
+    i=$((i + 1))
+  done
+  echo ""
+  read -rp "  Select [1-${#STATE_FILES[@]}]: " sel
+  { [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le "${#STATE_FILES[@]}" ]; } \
+    || error "Invalid selection."
+  STATE_FILE="${STATE_FILES[$((sel - 1))]}"
+fi
+
 # shellcheck source=/dev/null
 source "$STATE_FILE"
+success "Instance: $APP_NAME  (state file: $STATE_FILE)"
+
+# Resolve the public base URL — HTTPS custom domain if enabled, else the ALB DNS name
+if [ "${ENABLE_HTTPS:-false}" = "true" ] && [ -n "${DOMAIN_NAME:-}" ]; then
+  APP_BASE="https://${DOMAIN_NAME}"
+else
+  APP_BASE="http://${ALB_DNS}"
+fi
 
 ECR_REPO="${APP_NAME}-webapp"
 ECR_IMAGE="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPO}:latest"
@@ -109,6 +180,11 @@ success "Image built and pushed: $ECR_IMAGE"
 
 # ── UPDATE TASK DEFINITION ────────────────────────────────────────────────────
 header "Re-registering ECS task definition"
+
+# A deleted or never-created log group is a common reason the task won't start,
+# so make sure it's there before pointing a new task definition at it.
+ensure_log_group "$LOG_GROUP"
+success "Log group: $LOG_GROUP"
 
 # JSON-escape the admin password so quotes/backslashes/etc. cannot break the
 # task-definition JSON below. Produces a value WITHOUT surrounding quotes.
@@ -222,8 +298,8 @@ echo -e "${BOLD}${GREEN}══════════════════�
 echo -e "${BOLD}${GREEN}  Image rebuild complete!${NC}"
 echo -e "${BOLD}${GREEN}═══════════════════════════════════════════════════${NC}"
 echo ""
-echo -e "  ${BOLD}App URL:${NC}   http://${ALB_DNS}/"
-echo -e "  ${BOLD}API Docs:${NC}  http://${ALB_DNS}/docs"
+echo -e "  ${BOLD}App URL:${NC}   ${APP_BASE}/"
+echo -e "  ${BOLD}API Docs:${NC}  ${APP_BASE}/docs"
 echo ""
 echo -e "  The image is stored in your own AWS account (ECR) — no external registry."
 echo ""

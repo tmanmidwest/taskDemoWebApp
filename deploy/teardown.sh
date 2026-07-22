@@ -19,8 +19,6 @@ CHECKMARK="${GREEN}✔${NC}"
 ARROW="${BLUE}▶${NC}"
 WARNING="${YELLOW}⚠${NC}"
 
-STATE_FILE=".task-demo-state"
-
 log()     { echo -e "${ARROW}  $1"; }
 success() { echo -e "${CHECKMARK}  $1"; }
 warn()    { echo -e "${WARNING}  ${YELLOW}$1${NC}"; }
@@ -38,16 +36,47 @@ SESSION_ACCOUNT=$(echo "$CALLER" | python3 -c "import sys,json; print(json.load(
 SESSION_USER=$(echo "$CALLER" | python3 -c "import sys,json; print(json.load(sys.stdin)['Arn'].split('/')[-1])")
 success "Logged in as: $SESSION_USER (Account: $SESSION_ACCOUNT)"
 
-# ── LOAD STATE ────────────────────────────────────────────────────────────────
-if [ -f "$STATE_FILE" ]; then
+# ── SELECT DEPLOYMENT INSTANCE ────────────────────────────────────────────────
+# Find every instance's state file. Set INSTANCE=<name> to pick one directly;
+# otherwise use the only one, or choose from a list when several exist. With no
+# state file at all, fall back to discovering the instance's resources from AWS.
+shopt -s nullglob
+STATE_FILES=( .task-demo-state* )
+shopt -u nullglob
+
+if [ "${#STATE_FILES[@]}" -gt 0 ]; then
+  STATE_FILE=""
+  if [ -n "${INSTANCE:-}" ]; then
+    for f in "${STATE_FILES[@]}"; do
+      grep -q "^APP_NAME=${INSTANCE}$" "$f" && { STATE_FILE="$f"; break; }
+    done
+    [ -n "$STATE_FILE" ] || error "No deployment found for instance '${INSTANCE}'."
+  elif [ "${#STATE_FILES[@]}" -eq 1 ]; then
+    STATE_FILE="${STATE_FILES[0]}"
+  else
+    echo ""
+    echo -e "  ${BOLD}Multiple deployments found — choose one to tear down:${NC}"
+    i=1
+    for f in "${STATE_FILES[@]}"; do
+      nm=$(grep '^APP_NAME=' "$f" | cut -d= -f2)
+      rg=$(grep '^REGION=' "$f" | cut -d= -f2)
+      echo -e "    ${BOLD}${i})${NC} ${nm}  (${rg})"
+      i=$((i + 1))
+    done
+    echo ""
+    read -rp "  Select [1-${#STATE_FILES[@]}]: " sel
+    { [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le "${#STATE_FILES[@]}" ]; } \
+      || error "Invalid selection."
+    STATE_FILE="${STATE_FILES[$((sel - 1))]}"
+  fi
   # shellcheck source=/dev/null
   source "$STATE_FILE"
 else
   warn "No state file found — looking up resources from AWS directly..."
   REGION=$(aws configure get region 2>/dev/null || echo "us-east-1")
   ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-  APP_NAME="task-demo"
-  LOG_GROUP="/ecs/task-demo-webapp"
+  APP_NAME="${INSTANCE:-task-demo}"
+  LOG_GROUP="/ecs/${APP_NAME}-webapp"
 
   VPC_ID=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true     --query 'Vpcs[0].VpcId' --output text --region "$REGION" 2>/dev/null || echo "")
 
@@ -234,6 +263,33 @@ aws elbv2 delete-target-group \
   --region "$REGION" >/dev/null 2>/dev/null || warn "Target group not found — skipping"
 success "Target group deleted"
 
+# ── TLS CERTIFICATE (ACM) ─────────────────────────────────────────────────────
+header "TLS certificate (ACM)"
+
+CERT_ARN="${CERT_ARN:-}"
+# If we don't have it from state, try to find it by domain
+if { [ -z "$CERT_ARN" ] || [ "$CERT_ARN" = "None" ]; } && [ -n "${DOMAIN_NAME:-}" ]; then
+  CERT_ARN=$(aws acm list-certificates --region "$REGION" \
+    --query "CertificateSummaryList[?DomainName=='${DOMAIN_NAME}'].CertificateArn | [0]" \
+    --output text 2>/dev/null || echo "")
+fi
+
+if [ -n "$CERT_ARN" ] && [ "$CERT_ARN" != "None" ]; then
+  log "Deleting ACM certificate..."
+  # Retry briefly — the cert can't be deleted until the ALB listener fully detaches
+  attempt=0
+  while [ $attempt -lt 6 ]; do
+    aws acm delete-certificate --certificate-arn "$CERT_ARN" --region "$REGION" >/dev/null 2>&1 && break
+    sleep 5
+    attempt=$((attempt + 1))
+  done
+  success "ACM certificate deleted"
+  warn "Remove the leftover CNAME records for ${DOMAIN_NAME:-your domain} in Cloudflare"
+  warn "(the certificate-validation record and the record pointing at the load balancer)."
+else
+  skip "No ACM certificate found"
+fi
+
 # ── EFS ───────────────────────────────────────────────────────────────────────
 header "EFS filesystem (persistent storage)"
 
@@ -306,7 +362,7 @@ aws logs delete-log-group \
 success "Log group deleted"
 
 # ── CLEAN UP STATE FILE ───────────────────────────────────────────────────────
-rm -f "$STATE_FILE"
+rm -f "${STATE_FILE:-}"
 success "State file removed"
 
 echo ""

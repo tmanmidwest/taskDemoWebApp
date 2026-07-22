@@ -24,8 +24,6 @@ CHECKMARK="${GREEN}✔${NC}"
 ARROW="${BLUE}▶${NC}"
 WARNING="${YELLOW}⚠${NC}"
 
-STATE_FILE=".task-demo-state"
-
 log()     { echo -e "${ARROW}  $1"; }
 success() { echo -e "${CHECKMARK}  $1"; }
 warn()    { echo -e "${WARNING}  ${YELLOW}$1${NC}"; }
@@ -43,9 +41,49 @@ SESSION_ACCOUNT=$(echo "$CALLER" | python3 -c "import sys,json; print(json.load(
 SESSION_USER=$(echo "$CALLER" | python3 -c "import sys,json; print(json.load(sys.stdin)['Arn'].split('/')[-1])")
 success "Logged in as: $SESSION_USER (Account: $SESSION_ACCOUNT)"
 
-[ -f "$STATE_FILE" ] || error "No state file found ($STATE_FILE). Deploy the app first with ./deploy.sh"
+# ── SELECT DEPLOYMENT INSTANCE ────────────────────────────────────────────────
+# Find every instance's state file. Set INSTANCE=<name> to pick one directly;
+# otherwise use the only one, or choose from a list when several exist.
+shopt -s nullglob
+STATE_FILES=( .task-demo-state* )
+shopt -u nullglob
+
+[ "${#STATE_FILES[@]}" -gt 0 ] || error "No deployment found. Deploy first with ./deploy.sh"
+
+STATE_FILE=""
+if [ -n "${INSTANCE:-}" ]; then
+  for f in "${STATE_FILES[@]}"; do
+    grep -q "^APP_NAME=${INSTANCE}$" "$f" && { STATE_FILE="$f"; break; }
+  done
+  [ -n "$STATE_FILE" ] || error "No deployment found for instance '${INSTANCE}'."
+elif [ "${#STATE_FILES[@]}" -eq 1 ]; then
+  STATE_FILE="${STATE_FILES[0]}"
+else
+  echo ""
+  echo -e "  ${BOLD}Multiple deployments found — choose one:${NC}"
+  i=1
+  for f in "${STATE_FILES[@]}"; do
+    nm=$(grep '^APP_NAME=' "$f" | cut -d= -f2)
+    rg=$(grep '^REGION=' "$f" | cut -d= -f2)
+    echo -e "    ${BOLD}${i})${NC} ${nm}  (${rg})"
+    i=$((i + 1))
+  done
+  echo ""
+  read -rp "  Select [1-${#STATE_FILES[@]}]: " sel
+  { [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le "${#STATE_FILES[@]}" ]; } \
+    || error "Invalid selection."
+  STATE_FILE="${STATE_FILES[$((sel - 1))]}"
+fi
+
 # shellcheck source=/dev/null
 source "$STATE_FILE"
+
+# Resolve the public base URL — HTTPS custom domain if enabled, else the ALB DNS name
+if [ "${ENABLE_HTTPS:-false}" = "true" ] && [ -n "${DOMAIN_NAME:-}" ]; then
+  APP_BASE="https://${DOMAIN_NAME}"
+else
+  APP_BASE="http://${ALB_DNS}"
+fi
 
 CMD="${1:-help}"
 
@@ -88,8 +126,8 @@ case "$CMD" in
     echo -e "  ALB health:    $HEALTH"
     echo -e "  Region:        $REGION"
     echo ""
-    echo -e "  ${BOLD}URL:${NC}       http://${ALB_DNS}/"
-    echo -e "  ${BOLD}API Docs:${NC}  http://${ALB_DNS}/docs"
+    echo -e "  ${BOLD}URL:${NC}       ${APP_BASE}/"
+    echo -e "  ${BOLD}API Docs:${NC}  ${APP_BASE}/docs"
     echo ""
     ;;
 
@@ -148,7 +186,7 @@ case "$CMD" in
     echo ""
     success "App is running!"
     echo ""
-    echo -e "  ${BOLD}URL:${NC}  http://${ALB_DNS}/"
+    echo -e "  ${BOLD}URL:${NC}  ${APP_BASE}/"
     echo ""
     ;;
 
@@ -187,7 +225,7 @@ case "$CMD" in
     echo ""
     success "App restarted successfully. Your data is intact."
     echo ""
-    echo -e "  ${BOLD}URL:${NC}  http://${ALB_DNS}/"
+    echo -e "  ${BOLD}URL:${NC}  ${APP_BASE}/"
     echo ""
     ;;
 
@@ -204,9 +242,9 @@ case "$CMD" in
   # ── URL ──────────────────────────────────────────────────────────────────────
   url)
     echo ""
-    echo -e "  ${BOLD}App URL:${NC}   http://${ALB_DNS}/"
-    echo -e "  ${BOLD}API Docs:${NC}  http://${ALB_DNS}/docs"
-    echo -e "  ${BOLD}Health:${NC}    http://${ALB_DNS}/health"
+    echo -e "  ${BOLD}App URL:${NC}   ${APP_BASE}/"
+    echo -e "  ${BOLD}API Docs:${NC}  ${APP_BASE}/docs"
+    echo -e "  ${BOLD}Health:${NC}    ${APP_BASE}/health"
     echo ""
     ;;
 
