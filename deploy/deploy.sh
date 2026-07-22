@@ -225,14 +225,18 @@ done
 STATE_FILE=$(state_file_for "$APP_NAME")
 success "Instance: $APP_NAME"
 
-# Note any other instances already deployed from this machine (each ALB bills separately)
+# Note any other instances already deployed from this machine (each ALB bills separately).
+# Counted arithmetically rather than by looping: under `set -u`, bash 3.2 (the macOS
+# default) treats "${arr[@]}" on an empty array as an unbound variable, and no state
+# files at all is exactly the first-deployment case.
 shopt -s nullglob
 EXISTING_STATES=( .task-demo-state* )
 shopt -u nullglob
-OTHER_COUNT=0
-for f in "${EXISTING_STATES[@]}"; do
-  [ "$f" = "$STATE_FILE" ] || OTHER_COUNT=$((OTHER_COUNT + 1))
-done
+OTHER_COUNT=${#EXISTING_STATES[@]}
+# This instance's own file matches the glob too, so don't count it as "other"
+if [ -f "$STATE_FILE" ]; then
+  OTHER_COUNT=$((OTHER_COUNT - 1))
+fi
 if [ "$OTHER_COUNT" -gt 0 ]; then
   warn "$OTHER_COUNT other instance(s) already tracked on this machine — each running"
   warn "instance has its own load balancer (~\$16/month). Run ./teardown.sh to remove one."
