@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Activity — TaskFlow{% endblock %}
+{% block content %}
+<div class="page-head row">
+  <div>
+    <h1>Activity Log</h1>
+    <p class="muted">
+      Every login, change, and API call across TaskFlow. Click a row for details.
+    </p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-small" id="export-csv"
+       href="/activity/export.csv?{{ export_qs }}">Export CSV</a>
+    <a class="btn btn-small" id="export-json"
+       href="/activity/export.json?{{ export_qs }}">Export JSON</a>
+  </div>
+</div>
+
+<form class="activity-filters" method="get" action="/activity">
+  <div class="filter-grid">
+    <label>Search
+      <input type="text" name="q" value="{{ f.q }}" placeholder="message, actor, target…">
+    </label>
+    <label>Category
+      <select name="category">
+        <option value="">All</option>
+        {% for c in categories %}
+        <option value="{{ c }}" {{ "selected" if f.category == c }}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Outcome
+      <select name="outcome">
+        <option value="">All</option>
+        {% for o in outcomes %}
+        <option value="{{ o }}" {{ "selected" if f.outcome == o }}>{{ o }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Surface
+      <select name="surface">
+        <option value="">All</option>
+        {% for s in surfaces %}
+        <option value="{{ s }}" {{ "selected" if f.surface == s }}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Event type
+      <input type="text" name="event_type" value="{{ f.event_type }}" placeholder="e.g. user.created">
+    </label>
+    <label>Actor
+      <input type="text" name="actor" value="{{ f.actor }}" placeholder="username">
+    </label>
+    <label>From
+      <input type="datetime-local" name="date_from" value="{{ f.date_from }}">
+    </label>
+    <label>To
+      <input type="datetime-local" name="date_to" value="{{ f.date_to }}">
+    </label>
+    <label>Show
+      <select name="limit">
+        {% for n in limit_choices %}
+        <option value="{{ n }}" {{ "selected" if limit == n }}>{{ n }} rows</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <div class="filter-actions">
+    <button type="submit" class="btn btn-primary btn-small">Apply</button>
+    <a href="/activity" class="btn btn-small">Reset</a>
+    <span class="muted">Showing {{ events | length }} of {{ total }} matching events</span>
+  </div>
+</form>
+
+{% if events %}
+<table class="table activity-table" id="activity-table">
+  <thead>
+    <tr>
+      <th>Time (UTC)</th><th>Category</th><th>Event</th>
+      <th>Actor</th><th>Target</th><th>Outcome</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in events %}
+    <tr class="activity-row" data-row="{{ e.id }}">
+      <td class="mono nowrap">{{ e.occurred_at }}</td>
+      <td><span class="cat-badge cat-{{ e.category }}">{{ e.category }}</span></td>
+      <td class="mono">{{ e.event_type }}</td>
+      <td>
+        {{ e.actor_label or "—" }}
+        <div class="muted small">{{ e.actor_type }}{% if e.surface %} · {{ e.surface }}{% endif %}</div>
+      </td>
+      <td>
+        {% if e.target_label %}{{ e.target_label }}
+        {% elif e.target_id %}<span class="mono">{{ e.target_type }} {{ e.target_id }}</span>
+        {% else %}—{% endif %}
+      </td>
+      <td><span class="outcome-badge outcome-{{ e.outcome }}">{{ e.outcome }}</span></td>
+    </tr>
+    <tr class="activity-detail" id="detail-{{ e.id }}" hidden>
+      <td colspan="6">
+        <div class="detail-line"><strong>Message:</strong> {{ e.message or "—" }}</div>
+        <div class="detail-line"><strong>IP:</strong> {{ e.ip_address or "—" }}</div>
+        <pre class="detail-json">{{ e | tojson(indent=2) }}</pre>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty">No activity matches these filters yet.</div>
+{% endif %}
+
+<script>
+  document.querySelectorAll('.activity-row').forEach(function (row) {
+    row.addEventListener('click', function () {
+      var d = document.getElementById('detail-' + row.dataset.row);
+      if (d) { d.hidden = !d.hidden; row.classList.toggle('open'); }
+    });
+  });
+</script>
+{% endblock %}

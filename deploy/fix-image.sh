@@ -77,6 +77,12 @@ ADMIN_EMAIL="${ADMIN_EMAIL:-admin@taskflow.demo}"
 # TASKAPP_ADMIN_PASSWORD in the environment (e.g. recovering onto a fresh volume).
 ADMIN_PASSWORD="${TASKAPP_ADMIN_PASSWORD:-}"
 
+# Sample data stays OFF during recovery: this script rebuilds the task definition
+# from scratch, and quietly re-adding demo users to a deployment someone is mid-way
+# through provisioning would be worse than leaving the dashboard sparse. Set
+# TASKAPP_SEED_SAMPLE=true to opt in, or run ./manage.sh seed afterwards.
+SEED_SAMPLE="${TASKAPP_SEED_SAMPLE:-false}"
+
 # ── AWS SESSION VALIDATION ────────────────────────────────────────────────────
 header "Validating AWS session"
 
@@ -211,7 +217,8 @@ aws ecs register-task-definition \
         { \"name\": \"TASKAPP_DB_PATH\",        \"value\": \"/data/taskflow.db\" },
         { \"name\": \"TASKAPP_ADMIN_USERNAME\", \"value\": \"${ADMIN_USERNAME}\" },
         { \"name\": \"TASKAPP_ADMIN_PASSWORD\", \"value\": \"${ADMIN_PASSWORD_JSON}\" },
-        { \"name\": \"TASKAPP_ADMIN_EMAIL\",    \"value\": \"${ADMIN_EMAIL}\" }
+        { \"name\": \"TASKAPP_ADMIN_EMAIL\",    \"value\": \"${ADMIN_EMAIL}\" },
+        { \"name\": \"TASKAPP_SEED_SAMPLE\",    \"value\": \"${SEED_SAMPLE}\" }
       ],
       \"mountPoints\": [{
         \"sourceVolume\": \"${APP_NAME}-data\",

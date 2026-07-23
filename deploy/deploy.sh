@@ -29,6 +29,13 @@ ADMIN_EMAIL="${TASKAPP_ADMIN_EMAIL:-admin@taskflow.demo}"
 ADMIN_PASSWORD="${TASKAPP_ADMIN_PASSWORD:-}"   # set interactively below if empty
 MIN_ADMIN_PASSWORD_LEN=8
 
+# Sample data. When true, first boot also creates a few example users and tasks
+# so the dashboard isn't empty during a walkthrough. Leave it off for a clean
+# provisioning demo where Saviynt creates every user. You'll be prompted; set
+# TASKAPP_SEED_SAMPLE=true|false in the environment to skip the prompt. You can
+# also load it later into a running deployment with ./manage.sh seed.
+SEED_SAMPLE="${TASKAPP_SEED_SAMPLE:-}"
+
 # HTTPS / custom domain (optional). Leave disabled for the default HTTP-only
 # deployment on the raw ALB DNS name. When enabled, the script provisions a free
 # AWS-managed (ACM) certificate, adds an HTTPS:443 listener to the load balancer,
@@ -309,7 +316,26 @@ else
   unset PW1 PW2
 fi
 
+# ── SAMPLE DATA ───────────────────────────────────────────────────────────────
+header "Sample data"
 
+if [ -z "$SEED_SAMPLE" ]; then
+  echo -e "  Create a few example users and tasks on first boot so the dashboard"
+  echo -e "  isn't empty during a walkthrough? Choose ${BOLD}No${NC} for a clean"
+  echo -e "  provisioning demo where Saviynt creates every user."
+  echo ""
+  read -rp "  Load sample data? [y/N] " seed_confirm
+  echo ""
+  if [[ "$seed_confirm" =~ ^[Yy]$ ]]; then SEED_SAMPLE="true"; else SEED_SAMPLE="false"; fi
+fi
+
+if [ "$SEED_SAMPLE" = "true" ]; then
+  success "Sample data will be created on first boot"
+else
+  SEED_SAMPLE="false"
+  success "No sample data — only the administrator is created"
+  echo -e "  ${YELLOW}You can load it later with ./manage.sh seed${NC}"
+fi
 
 if [ -f "$STATE_FILE" ]; then
   warn "A previous deployment state file exists ($STATE_FILE)."
@@ -583,7 +609,8 @@ TASK_DEF_ARN=$(aws ecs register-task-definition \
         { \"name\": \"TASKAPP_DB_PATH\",        \"value\": \"/data/taskflow.db\" },
         { \"name\": \"TASKAPP_ADMIN_USERNAME\", \"value\": \"${ADMIN_USERNAME}\" },
         { \"name\": \"TASKAPP_ADMIN_PASSWORD\", \"value\": \"${ADMIN_PASSWORD_JSON}\" },
-        { \"name\": \"TASKAPP_ADMIN_EMAIL\",    \"value\": \"${ADMIN_EMAIL}\" }
+        { \"name\": \"TASKAPP_ADMIN_EMAIL\",    \"value\": \"${ADMIN_EMAIL}\" },
+        { \"name\": \"TASKAPP_SEED_SAMPLE\",    \"value\": \"${SEED_SAMPLE}\" }
       ],
       \"mountPoints\": [{
         \"sourceVolume\": \"${APP_NAME}-data\",

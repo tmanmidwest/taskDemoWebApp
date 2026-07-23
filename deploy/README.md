@@ -123,9 +123,47 @@ rebuilds the image and redeploys automatically.
 ./manage.sh stop       # Pause the app — data kept, Fargate charges stop
 ./manage.sh start      # Resume after stopping
 ./manage.sh restart    # Restart without a code change
+./manage.sh seed       # Load sample users and tasks
 ./manage.sh logs       # Stream live logs (Ctrl+C to stop)
 ./manage.sh url        # Print the app URL
 ```
+
+---
+
+## Sample data
+
+A fresh deployment contains only the administrator — by design, so the app can
+serve as a clean provisioning target where Saviynt creates every user.
+
+To start with a populated dashboard instead, answer yes to the **Load sample
+data?** prompt during `deploy.sh`, or set it up front:
+
+```bash
+TASKAPP_SEED_SAMPLE=true ./deploy.sh
+```
+
+To load it into a deployment that's already running:
+
+```bash
+./manage.sh seed
+```
+
+Either way you get three users — Maria Lopez (Manager), Devon Carter (Sales Rep),
+Aisha Khan (Technical Support) — plus three example tasks assigned to them.
+
+Notes:
+
+- Sample users are assigned random passwords and aren't meant to log in. Sign in
+  as your admin to view and manage them.
+- Seeding skips users whose email already exists, and only creates tasks when at
+  least one user was newly created *and* no tasks exist yet. Re-running is safe
+  but won't recreate things you've deleted.
+- `./manage.sh seed` restarts the app twice (~4 minutes): once with seeding on so
+  the app creates the data at startup, then again with it back off. The flag is
+  deliberately not left on — otherwise any later restart would resurrect users
+  your demo had just deprovisioned.
+- `fix-image.sh` leaves sample data off during recovery. Pass
+  `TASKAPP_SEED_SAMPLE=true` if you want it re-created on a fresh volume.
 
 ---
 
@@ -266,12 +304,13 @@ Password** link (`/account/password`) to rotate the admin password after deploy.
 | `setup.sh` | Check all prerequisites before deploying |
 | `deploy.sh` | Full deployment from scratch (~10 min) |
 | `update.sh` | Rebuild and redeploy from latest GitHub source |
-| `manage.sh` | Stop, start, restart, logs, status |
+| `manage.sh` | Stop, start, restart, seed, logs, status |
 | `restore-state.sh` | Rebuild a state file from AWS (e.g. on a second machine) |
 | `fix-image.sh` | Rebuild the image and recover a stuck/broken deployment |
 | `teardown.sh` | Delete all AWS resources for one instance |
 
 All scripts except `setup.sh` accept `INSTANCE=<name>` to select a deployment
 without being prompted. `deploy.sh` additionally accepts `ENABLE_HTTPS=true` and
-`DOMAIN_NAME=<domain>` for non-interactive HTTPS setup, and
-`TASKAPP_ADMIN_PASSWORD` to skip the admin-password prompt.
+`DOMAIN_NAME=<domain>` for non-interactive HTTPS setup,
+`TASKAPP_ADMIN_PASSWORD` to skip the admin-password prompt, and
+`TASKAPP_SEED_SAMPLE=true|false` to skip the sample-data prompt.

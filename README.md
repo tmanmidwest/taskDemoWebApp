@@ -22,6 +22,11 @@ reliably.
   own password (current password → new → confirm, minimum 8 characters).
 - **REST provisioning API** (`/api/users`) — for connector-style integrations,
   auto-documented at `/docs`.
+- **Activity log** (`/activity`) — an append-only audit trail of every login,
+  data change (task/user create, update, delete, activate/deactivate, password
+  reset), and API call. Visible to **any logged-in user**. Filter by search
+  text, category, outcome, surface (ui/api), event type, actor, or date range,
+  and export the current view as CSV or JSON. Passwords are never recorded.
 - **Default administrator** seeded automatically on first boot.
 
 When adding a user you only need **first name**, **last name**, and **email**.
@@ -90,6 +95,7 @@ mounting `/data` persists data across restarts.
 | `TASKAPP_ADMIN_USERNAME` | `robbytheadmin` | Seeded admin username |
 | `TASKAPP_ADMIN_EMAIL` | `admin@taskflow.demo` | Seeded admin email |
 | `TASKAPP_SEED_SAMPLE` | `false` | If `true`, also seed sample users/tasks |
+| `TASKAPP_AUDIT_RETENTION_DAYS` | `90` | Activity-log rows older than this are pruned daily. `0` or negative keeps them forever. |
 
 ---
 
@@ -163,10 +169,11 @@ Fargate behind a load balancer, with data persisted on EFS.
 app/
   main.py          FastAPI app, routes, sessions, startup seed
   api.py           /api/users REST provisioning endpoints
-  db.py            SQLite access, schema, password hashing, CRUD
+  db.py            SQLite access, schema, password hashing, CRUD, audit writes
+  audit.py         Activity-log helpers + middleware that logs all /api traffic
   permissions.py   Role-based access helpers
   seed.py          Seeds the default admin (and optional sample data)
-  templates/       Jinja2 templates (login, dashboard, tasks, users, forms)
+  templates/       Jinja2 templates (login, dashboard, tasks, users, activity, forms)
   static/style.css Minimal, automation-friendly styling
 Dockerfile         python:3.12-slim, non-root, healthcheck on /health
 requirements.txt

@@ -14,6 +14,7 @@
     <a href="/dashboard" id="nav-dashboard">My Tasks</a>
     {% if can_manage_tasks %}<a href="/tasks" id="nav-tasks">All Tasks</a>{% endif %}
     {% if can_view_users %}<a href="/users" id="nav-users">Users</a>{% endif %}
+    <a href="/activity" id="nav-activity">Activity</a>
   </nav>
   <div class="userbox">
     <span class="who">{{ user.first_name }} {{ user.last_name }}</span>

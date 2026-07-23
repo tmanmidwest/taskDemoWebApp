@@ -8,12 +8,16 @@ in the AWS deployment, so data survives restarts and redeploys.
 """
 
 import os
+import json
+import logging
 import sqlite3
 import hashlib
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 DB_PATH = os.environ.get("TASKAPP_DB_PATH", "/data/taskflow.db")
+
+_log = logging.getLogger("taskflow.audit")
 
 # The four roles this demo provisions. Order matters for dropdown display.
 ROLES = ["Administrator", "Manager", "Sales Rep", "Technical Support"]
@@ -64,6 +68,31 @@ def init_db():
                 created_at    TEXT    NOT NULL,
                 updated_at    TEXT    NOT NULL
             );
+
+            -- Append-only activity / audit trail. Rows are never updated.
+            -- actor_id has NO foreign key on purpose: deleting a user must
+            -- never rewrite or break the history of what they did.
+            CREATE TABLE IF NOT EXISTS audit_events (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                occurred_at  TEXT    NOT NULL,
+                category     TEXT    NOT NULL,   -- auth, account, task, user, api, system
+                event_type   TEXT    NOT NULL,   -- dotted, e.g. task.created, auth.login
+                outcome      TEXT    NOT NULL DEFAULT 'success',  -- success|failure|error
+                actor_type   TEXT    NOT NULL DEFAULT 'system',   -- user|api_client|anonymous|system
+                actor_label  TEXT,               -- username / api caller
+                actor_id     INTEGER,            -- app user id (no FK, see above)
+                target_type  TEXT,               -- what was acted on: task, user, endpoint
+                target_id    TEXT,
+                target_label TEXT,
+                surface      TEXT,               -- ui | api | system
+                message      TEXT    NOT NULL DEFAULT '',
+                ip_address   TEXT,
+                detail_json  TEXT                -- free-form JSON (user-agent, extras)
+            );
+            CREATE INDEX IF NOT EXISTS idx_audit_occurred   ON audit_events(occurred_at);
+            CREATE INDEX IF NOT EXISTS idx_audit_category   ON audit_events(category);
+            CREATE INDEX IF NOT EXISTS idx_audit_event_type ON audit_events(event_type);
+            CREATE INDEX IF NOT EXISTS idx_audit_outcome    ON audit_events(outcome);
             """
         )
 
@@ -246,3 +275,119 @@ def set_task_status(task_id, status):
 def delete_task(task_id):
     with get_conn() as conn:
         conn.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+
+
+# ── activity / audit log ────────────────────────────────────────────────────────
+def record_event(*, category, event_type, outcome="success", actor_type="system",
+                 actor_label=None, actor_id=None, target_type=None, target_id=None,
+                 target_label=None, surface=None, message="", ip_address=None,
+                 detail=None):
+    """Append one row to the activity log.
+
+    Deliberately swallows every error (and logs it) so an audit write can never
+    break the request that triggered it — a failed login must still be recorded
+    even though the request itself 'failed'. Uses its own connection which
+    commits immediately, independent of any caller transaction.
+    """
+    try:
+        payload = json.dumps(detail, default=str) if detail else None
+        with get_conn() as conn:
+            conn.execute(
+                """INSERT INTO audit_events
+                   (occurred_at, category, event_type, outcome, actor_type,
+                    actor_label, actor_id, target_type, target_id, target_label,
+                    surface, message, ip_address, detail_json)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (_now(), category, event_type, outcome, actor_type, actor_label,
+                 actor_id, target_type,
+                 str(target_id) if target_id is not None else None,
+                 target_label, surface, message, ip_address, payload),
+            )
+    except Exception:  # never let auditing break the app
+        _log.exception("record_event failed for %s", event_type)
+
+
+# Columns exported to CSV / JSON, in order.
+AUDIT_FIELDS = [
+    "id", "occurred_at", "category", "event_type", "outcome", "actor_type",
+    "actor_label", "actor_id", "target_type", "target_id", "target_label",
+    "surface", "message", "ip_address",
+]
+
+
+def list_events(filters=None, limit=100):
+    """Return (events, total_matching). `events` are plain dicts with detail_json
+    parsed into a `detail` dict; capped at `limit`. `total` ignores the cap."""
+    filters = filters or {}
+    where, params = [], []
+
+    def add(cond, val):
+        where.append(cond)
+        params.append(val)
+
+    if filters.get("category"):
+        add("category = ?", filters["category"])
+    if filters.get("outcome"):
+        add("outcome = ?", filters["outcome"])
+    if filters.get("surface"):
+        add("surface = ?", filters["surface"])
+    if filters.get("event_type"):
+        add("event_type LIKE ?", f"%{filters['event_type']}%")
+    if filters.get("actor"):
+        add("actor_label LIKE ?", f"%{filters['actor']}%")
+    if filters.get("date_from"):
+        add("occurred_at >= ?", filters["date_from"])
+    if filters.get("date_to"):
+        add("occurred_at <= ?", filters["date_to"])
+    if filters.get("q"):
+        like = f"%{filters['q']}%"
+        where.append(
+            "(message LIKE ? OR event_type LIKE ? OR actor_label LIKE ? "
+            "OR target_label LIKE ? OR detail_json LIKE ?)"
+        )
+        params.extend([like] * 5)
+
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    with get_conn() as conn:
+        total = conn.execute(
+            f"SELECT COUNT(*) c FROM audit_events{clause}", params
+        ).fetchone()["c"]
+        rows = conn.execute(
+            f"SELECT * FROM audit_events{clause} ORDER BY id DESC LIMIT ?",
+            (*params, limit),
+        ).fetchall()
+
+    events = []
+    for r in rows:
+        d = dict(r)
+        raw = d.pop("detail_json", None)
+        try:
+            d["detail"] = json.loads(raw) if raw else {}
+        except Exception:
+            d["detail"] = {"_raw": raw}
+        events.append(d)
+    return events, total
+
+
+def event_categories():
+    with get_conn() as conn:
+        return [
+            r["category"]
+            for r in conn.execute(
+                "SELECT DISTINCT category FROM audit_events ORDER BY category"
+            )
+        ]
+
+
+def prune_events(retention_days):
+    """Delete events older than the retention window. Returns rows removed.
+    A non-positive retention_days disables pruning (keep forever)."""
+    if not retention_days or retention_days <= 0:
+        return 0
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)) \
+        .strftime("%Y-%m-%d %H:%M:%S")
+    with get_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM audit_events WHERE occurred_at < ?", (cutoff,)
+        )
+        return cur.rowcount
