@@ -1,0 +1,40 @@
+# =============================================================================
+# TaskFlow demo web app — Docker Compose
+# Builds the image from source (Dockerfile) and runs a single FastAPI service
+# with SQLite persisted on a named volume. Suitable for the Cerebro app
+# replicator or plain `docker compose up`.
+# =============================================================================
+services:
+  taskflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: taskflow-demo:latest
+    ports:
+      - "${TASKAPP_BIND_PORT:-8000}:8000"
+    environment:
+      TASKAPP_BIND_HOST: "0.0.0.0"
+      TASKAPP_BIND_PORT: "8000"
+      TASKAPP_DB_PATH: "/data/taskflow.db"
+      TASKAPP_LOG_LEVEL: "${TASKAPP_LOG_LEVEL:-INFO}"
+      # Session signing key — override for anything but a throwaway demo.
+      TASKAPP_SECRET_KEY: "${TASKAPP_SECRET_KEY:-taskflow-demo-not-secret-change-me}"
+      # Required on first run so the initial admin can be created.
+      TASKAPP_ADMIN_PASSWORD: "${TASKAPP_ADMIN_PASSWORD:-changeme-admin-pw}"
+      TASKAPP_ADMIN_USERNAME: "${TASKAPP_ADMIN_USERNAME:-robbytheadmin}"
+      TASKAPP_ADMIN_EMAIL: "${TASKAPP_ADMIN_EMAIL:-admin@taskflow.demo}"
+      # Set to "true" to also seed sample users + tasks on first run.
+      TASKAPP_SEED_SAMPLE: "${TASKAPP_SEED_SAMPLE:-false}"
+      TASKAPP_AUDIT_RETENTION_DAYS: "${TASKAPP_AUDIT_RETENTION_DAYS:-90}"
+    volumes:
+      - taskflow-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  taskflow-data:
